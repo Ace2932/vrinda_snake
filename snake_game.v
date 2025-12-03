@@ -37,6 +37,10 @@ module snake_game (
     wire [11:0] head_rgb;
     wire [11:0] tail_rgb;
     wire [11:0] body_rgb;
+    reg  [5:0]  cell_offset_x;
+    reg  [5:0]  cell_offset_y;
+    reg  [3:0]  sprite_col;
+    reg  [3:0]  sprite_row;
 
 
 
@@ -73,7 +77,7 @@ module snake_game (
                                choose_vertical   ? dir_vertical   :
                                DIR_RIGHT;
 
-    function automatic bit is_opposite;
+    function automatic reg is_opposite;
         input [1:0] a;
         input [1:0] b;
         begin
@@ -267,20 +271,31 @@ module snake_game (
     reg [9:0] active_x, active_y;
     reg [3:0] cell_x, cell_y;
     reg       within_grid;
+    
     always @(*) begin
+        active_x       = 10'd0;
+        active_y       = 10'd0;
+        within_grid    = 1'b0;
+        cell_x         = 4'd0;
+        cell_y         = 4'd0;
+        cell_offset_x  = 6'd0;
+        cell_offset_y  = 6'd0;
+        sprite_col     = 4'd0;
+        sprite_row     = 4'd0;
+
         if (bright) begin
             active_x    = hCount - H_VISIBLE_START;
             active_y    = vCount - V_VISIBLE_START;
             within_grid = (active_x < GRID_WIDTH  * CELL_WIDTH) &&
                           (active_y < GRID_HEIGHT * CELL_HEIGHT);
-            cell_x      = within_grid ? active_x / CELL_WIDTH  : 4'd0;
-            cell_y      = within_grid ? active_y / CELL_HEIGHT : 4'd0;
-        end else begin
-            active_x    = 10'd0;
-            active_y    = 10'd0;
-            within_grid = 1'b0;
-            cell_x      = 4'd0;
-            cell_y      = 4'd0;
+            if (within_grid) begin
+                cell_x        = active_x / CELL_WIDTH;
+                cell_y        = active_y / CELL_HEIGHT;
+                cell_offset_x = active_x - (cell_x * CELL_WIDTH);
+                cell_offset_y = active_y - (cell_y * CELL_HEIGHT);
+                sprite_col    = (cell_offset_x * SPRITE_W) / CELL_WIDTH;
+                sprite_row    = (cell_offset_y * SPRITE_H) / CELL_HEIGHT;
+            end
         end
     end
 
@@ -316,15 +331,18 @@ module snake_game (
 
     reg snake_cell;
     reg snake_head_cell;
+    reg snake_tail_cell;
     always @(*) begin
         snake_cell      = 1'b0;
         snake_head_cell = 1'b0;
+        snake_tail_cell = 1'b0;
         if (within_grid) begin
             for (i = 0; i < MAX_SNAKE_CELLS; i = i + 1) begin
                 if (i < snake_length) begin
                     if (snake_x[i][3:0] == cell_x && snake_y[i][3:0] == cell_y) begin
                         snake_cell      = 1'b1;
                         snake_head_cell = (i == 0);
+                        snake_tail_cell = (i == (snake_length - 1));
                     end
                 end
             end
@@ -351,15 +369,45 @@ module snake_game (
                     if (game_over) begin
                         rgb = COLOR_GAME_OVER;
                     end else if (snake_head_cell) begin
-                        rgb = head_rgb;   // head sprite (rotated)
+                        rgb = head_rgb;   // head sprite
                     end else if (snake_tail_cell) begin
-                        rgb = tail_rgb;   // tail sprite (rotated)
+                        rgb = tail_rgb;   // tail sprite
                     end else begin
-                        rgb = body_rgb;   // body sprite (no rotation)
+                        rgb = body_rgb;   // body sprite
                     end
                 end
             end
         end
     end
+
+    sprite_rom #(
+        .SPRITE_W (SPRITE_W),
+        .SPRITE_H (SPRITE_H),
+        .FILENAME ("head.hex")
+    ) head_sprite (
+        .sx(sprite_col),
+        .sy(sprite_row),
+        .rgb(head_rgb)
+    );
+
+    sprite_rom #(
+        .SPRITE_W (SPRITE_W),
+        .SPRITE_H (SPRITE_H),
+        .FILENAME ("body.hex")
+    ) body_sprite (
+        .sx(sprite_col),
+        .sy(sprite_row),
+        .rgb(body_rgb)
+    );
+
+    sprite_rom #(
+        .SPRITE_W (SPRITE_W),
+        .SPRITE_H (SPRITE_H),
+        .FILENAME ("tail.hex")
+    ) tail_sprite (
+        .sx(sprite_col),
+        .sy(sprite_row),
+        .rgb(tail_rgb)
+    );
 
 endmodule
