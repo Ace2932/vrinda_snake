@@ -57,8 +57,8 @@ module snake_game (
     wire button_pulse = btn_sync & ~btn_prev;
 
     // Direction decoding helpers
-    wire signed [5:0] tilt_vertical   = {acl_data[9],  acl_data[9:5]};   // Y-axis (forward/back)
-    wire signed [5:0] tilt_horizontal = {acl_data[14], acl_data[14:10]}; // X-axis (left/right)
+    wire signed [5:0] tilt_vertical   = {acl_data[14], acl_data[14:10]}; // X-axis as vertical (matches original mapping)
+    wire signed [5:0] tilt_horizontal = {acl_data[9],  acl_data[9:5]};   // Y-axis as horizontal
 
     wire [5:0] abs_vertical   = tilt_vertical[5]   ? (~tilt_vertical   + 6'd1) : tilt_vertical;
     wire [5:0] abs_horizontal = tilt_horizontal[5] ? (~tilt_horizontal + 6'd1) : tilt_horizontal;
@@ -72,7 +72,7 @@ module snake_game (
     wire choose_vertical   = vertical_valid   && (!horizontal_valid || abs_vertical > abs_horizontal);
 
     wire [1:0] dir_horizontal = tilt_horizontal[5] ? DIR_RIGHT : DIR_LEFT;
-    wire [1:0] dir_vertical   = tilt_vertical[5]   ? DIR_UP    : DIR_DOWN;
+    wire [1:0] dir_vertical   = tilt_vertical[5]   ? DIR_DOWN  : DIR_UP;
 
     wire candidate_valid = choose_horizontal || choose_vertical;
     wire [1:0] candidate_dir = choose_horizontal ? dir_horizontal :
