@@ -35,8 +35,8 @@ module snake_game (
     //sprite paramters
     localparam integer SPRITE_W = 16;
     localparam integer SPRITE_H = 16;
-    localparam [3:0] SPRITE_W_M1 = SPRITE_W - 1;
-    localparam [3:0] SPRITE_H_M1 = SPRITE_H - 1;
+    localparam [3:0]   SPRITE_W_M1 = SPRITE_W - 1;
+    localparam [3:0]   SPRITE_H_M1 = SPRITE_H - 1;
 
     wire [11:0] head_rgb;
     wire [11:0] tail_rgb;
@@ -45,9 +45,11 @@ module snake_game (
     reg  [5:0]  cell_offset_y;
     reg  [3:0]  sprite_col;
     reg  [3:0]  sprite_row;
-    wire [3:0]  head_sx, head_sy;
-    wire [3:0]  tail_sx, tail_sy;
-    wire [3:0]  body_sx, body_sy;
+    reg  [3:0]  rot_sx;
+    reg  [3:0]  rot_sy;
+    reg  [1:0]  segment_dir;
+    reg         segment_is_head;
+    reg         segment_is_tail;
 
 
 
@@ -77,7 +79,7 @@ module snake_game (
     wire choose_vertical   = vertical_valid   && (!horizontal_valid || abs_vertical > abs_horizontal);
 
     wire [1:0] dir_horizontal = tilt_horizontal[5] ? DIR_RIGHT : DIR_LEFT;
-    wire [1:0] dir_vertical   = tilt_vertical[5]   ? DIR_DOWN  : DIR_UP;
+    wire [1:0] dir_vertical   = tilt_vertical[5]   ? DIR_UP    : DIR_DOWN;
 
     wire candidate_valid = choose_horizontal || choose_vertical;
     wire [1:0] candidate_dir = choose_horizontal ? dir_horizontal :
@@ -136,27 +138,28 @@ module snake_game (
         end
     endfunction
 
+
     function automatic [15:0] bcd_increment;
         input [15:0] value;
         reg [15:0] tmp;
         begin
             tmp = value;
             if (value != 16'h9999) begin
-                if (tmp[3:0] == 4'd9) begin
-                    tmp[3:0] = 4'd0;
-                    if (tmp[7:4] == 4'd9) begin
-                        tmp[7:4] = 4'd0;
-                        if (tmp[11:8] == 4'd9) begin
-                            tmp[11:8] = 4'd0;
-                            tmp[15:12] = tmp[15:12] + 4'd1;
+                if (tmp[3:0] == 4'h9) begin
+                    tmp[3:0] = 4'h0;
+                    if (tmp[7:4] == 4'h9) begin
+                        tmp[7:4] = 4'h0;
+                        if (tmp[11:8] == 4'h9) begin
+                            tmp[11:8] = 4'h0;
+                            tmp[15:12] = tmp[15:12] + 4'h1;
                         end else begin
-                            tmp[11:8] = tmp[11:8] + 4'd1;
+                            tmp[11:8] = tmp[11:8] + 4'h1;
                         end
                     end else begin
-                        tmp[7:4] = tmp[7:4] + 4'd1;
+                        tmp[7:4] = tmp[7:4] + 4'h1;
                     end
                 end else begin
-                    tmp[3:0] = tmp[3:0] + 4'd1;
+                    tmp[3:0] = tmp[3:0] + 4'h1;
                 end
             end
             bcd_increment = tmp;
@@ -331,21 +334,6 @@ module snake_game (
         end
     end
 
-    always @(*) begin
-        tail_dir = dir_current;
-        if (snake_length >= 9'd2) begin
-            tail_idx = snake_length - 1;
-            if (snake_x[tail_idx-1] < snake_x[tail_idx])
-                tail_dir = DIR_RIGHT;
-            else if (snake_x[tail_idx-1] > snake_x[tail_idx])
-                tail_dir = DIR_LEFT;
-            else if (snake_y[tail_idx-1] < snake_y[tail_idx])
-                tail_dir = DIR_DOWN;
-            else if (snake_y[tail_idx-1] > snake_y[tail_idx])
-                tail_dir = DIR_UP;
-        end
-    end
-
     // Visible area mapping
     localparam integer H_VISIBLE_START = 144;
     localparam integer V_VISIBLE_START = 35;
@@ -414,31 +402,34 @@ module snake_game (
     reg snake_cell;
     reg snake_head_cell;
     reg snake_tail_cell;
-    reg body_vertical_cell;
-    reg body_horizontal_cell;
-    reg [1:0] tail_dir;
-    integer tail_idx;
     always @(*) begin
-        snake_cell          = 1'b0;
-        snake_head_cell     = 1'b0;
-        snake_tail_cell     = 1'b0;
-        body_vertical_cell  = 1'b0;
-        body_horizontal_cell= 1'b0;
+        snake_cell        = 1'b0;
+        snake_head_cell   = 1'b0;
+        snake_tail_cell   = 1'b0;
+        segment_is_head   = 1'b0;
+        segment_is_tail   = 1'b0;
+        segment_dir       = DIR_UP;
         if (within_grid) begin
             for (i = 0; i < MAX_SNAKE_CELLS; i = i + 1) begin
                 if (!snake_cell && (i < snake_length)) begin
                     if (snake_x[i][3:0] == cell_x && snake_y[i][3:0] == cell_y) begin
                         snake_cell      = 1'b1;
-                        snake_head_cell = (i == 0);
-                        snake_tail_cell = (i == (snake_length - 1));
-                        if (i > 0 && i < snake_length - 1) begin
-                            if (snake_x[i-1] == snake_x[i] && snake_x[i+1] == snake_x[i]) begin
-                                body_vertical_cell   = 1'b1;
-                            end else if (snake_y[i-1] == snake_y[i] && snake_y[i+1] == snake_y[i]) begin
-                                body_horizontal_cell = 1'b1;
-                            end else begin
-                                body_vertical_cell   = 1'b1;
-                            end
+                        segment_is_head = (i == 0);
+                        segment_is_tail = (i == (snake_length - 1));
+                        snake_head_cell = segment_is_head;
+                        snake_tail_cell = segment_is_tail;
+                        if (segment_is_head) begin
+                            segment_dir = dir_current;
+                        end else begin
+                            // Use position relative to the segment closer to the head
+                            if (snake_x[i-1] > snake_x[i])
+                                segment_dir = DIR_RIGHT;
+                            else if (snake_x[i-1] < snake_x[i])
+                                segment_dir = DIR_LEFT;
+                            else if (snake_y[i-1] > snake_y[i])
+                                segment_dir = DIR_DOWN;
+                            else
+                                segment_dir = DIR_UP;
                         end
                     end
                 end
@@ -450,6 +441,13 @@ module snake_game (
                       within_grid &&
                       (fruit_x == cell_x) &&
                       (fruit_y == cell_y);
+
+    wire [7:0] rot_coords = rotate_coords(sprite_col, sprite_row, segment_dir);
+
+    always @(*) begin
+        rot_sx = rot_coords[7:4];
+        rot_sy = rot_coords[3:0];
+    end
 
     always @(*) begin
         if (!bright) begin
@@ -477,26 +475,38 @@ module snake_game (
         end
     end
 
-    wire [7:0] head_rot = rotate_coords(sprite_col, sprite_row, dir_current);
-    assign head_sx = head_rot[7:4];
-    assign head_sy = head_rot[3:0];
-
-    wire [7:0] tail_rot = rotate_coords(sprite_col, sprite_row, tail_dir);
-    assign tail_sx = tail_rot[7:4];
-    assign tail_sy = tail_rot[3:0];
-
-    wire [1:0] body_dir_render = body_horizontal_cell ? DIR_RIGHT : DIR_UP;
-    wire [7:0] body_rot = rotate_coords(sprite_col, sprite_row, body_dir_render);
-    assign body_sx = body_rot[7:4];
-    assign body_sy = body_rot[3:0];
+    always @(*) begin
+        case (dir_current)
+            DIR_UP: begin
+                rot_sx = sprite_col;
+                rot_sy = sprite_row;
+            end
+            DIR_RIGHT: begin
+                rot_sx = sprite_row;
+                rot_sy = (SPRITE_H - 1) - sprite_col;
+            end
+            DIR_DOWN: begin
+                rot_sx = (SPRITE_W - 1) - sprite_col;
+                rot_sy = (SPRITE_H - 1) - sprite_row;
+            end
+            DIR_LEFT: begin
+                rot_sx = (SPRITE_W - 1) - sprite_row;
+                rot_sy = sprite_col;
+            end
+            default: begin
+                rot_sx = sprite_col;
+                rot_sy = sprite_row;
+            end
+        endcase
+    end
 
     sprite_rom #(
         .SPRITE_W (SPRITE_W),
         .SPRITE_H (SPRITE_H),
         .FILENAME ("head.hex")
     ) head_sprite (
-        .sx(head_sx),
-        .sy(head_sy),
+        .sx(rot_sx),
+        .sy(rot_sy),
         .rgb(head_rgb)
     );
 
@@ -505,8 +515,8 @@ module snake_game (
         .SPRITE_H (SPRITE_H),
         .FILENAME ("body.hex")
     ) body_sprite (
-        .sx(body_sx),
-        .sy(body_sy),
+        .sx(rot_sx),
+        .sy(rot_sy),
         .rgb(body_rgb)
     );
 
@@ -515,8 +525,8 @@ module snake_game (
         .SPRITE_H (SPRITE_H),
         .FILENAME ("tail.hex")
     ) tail_sprite (
-        .sx(tail_sx),
-        .sy(tail_sy),
+        .sx(rot_sx),
+        .sy(rot_sy),
         .rgb(tail_rgb)
     );
 
