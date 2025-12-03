@@ -18,7 +18,7 @@ module snake_game (
     localparam integer CELL_HEIGHT       = 30;
     localparam integer STEP_INTERVAL     = 50_000_000; // 0.5 second @ 100 MHz
     localparam integer MAX_SNAKE_CELLS   = GRID_WIDTH * GRID_HEIGHT;
-    localparam [15:0] SCORE_MAX          = 16'd9999;
+    localparam [15:0] SCORE_MAX          = 16'h9999;
 
     localparam [11:0] COLOR_BACKGROUND   = 12'h118;
     localparam [11:0] COLOR_GRID         = 12'h333;
@@ -35,6 +35,8 @@ module snake_game (
     //sprite paramters
     localparam integer SPRITE_W = 16;
     localparam integer SPRITE_H = 16;
+    localparam [3:0] SPRITE_W_M1 = SPRITE_W - 1;
+    localparam [3:0] SPRITE_H_M1 = SPRITE_H - 1;
 
     wire [11:0] head_rgb;
     wire [11:0] tail_rgb;
@@ -43,6 +45,9 @@ module snake_game (
     reg  [5:0]  cell_offset_y;
     reg  [3:0]  sprite_col;
     reg  [3:0]  sprite_row;
+    wire [3:0]  head_sx, head_sy;
+    wire [3:0]  tail_sx, tail_sy;
+    wire [3:0]  body_sx, body_sy;
 
 
 
@@ -99,6 +104,62 @@ module snake_game (
             lfsr_advance = {current[6:0], current[7] ^ current[5] ^ current[4] ^ current[3]};
             if (lfsr_advance == 8'b0)
                 lfsr_advance = 8'h1D; // avoid lock-up at zero
+        end
+    endfunction
+
+    function automatic [7:0] rotate_coords;
+        input [3:0] col;
+        input [3:0] row;
+        input [1:0] dir;
+        reg [3:0] out_col;
+        reg [3:0] out_row;
+        begin
+            case (dir)
+                DIR_RIGHT: begin
+                    out_col = SPRITE_W_M1 - row;
+                    out_row = col;
+                end
+                DIR_DOWN: begin
+                    out_col = SPRITE_W_M1 - col;
+                    out_row = SPRITE_H_M1 - row;
+                end
+                DIR_LEFT: begin
+                    out_col = row;
+                    out_row = SPRITE_H_M1 - col;
+                end
+                default: begin // DIR_UP
+                    out_col = col;
+                    out_row = row;
+                end
+            endcase
+            rotate_coords = {out_col, out_row};
+        end
+    endfunction
+
+    function automatic [15:0] bcd_increment;
+        input [15:0] value;
+        reg [15:0] tmp;
+        begin
+            tmp = value;
+            if (value != 16'h9999) begin
+                if (tmp[3:0] == 4'd9) begin
+                    tmp[3:0] = 4'd0;
+                    if (tmp[7:4] == 4'd9) begin
+                        tmp[7:4] = 4'd0;
+                        if (tmp[11:8] == 4'd9) begin
+                            tmp[11:8] = 4'd0;
+                            tmp[15:12] = tmp[15:12] + 4'd1;
+                        end else begin
+                            tmp[11:8] = tmp[11:8] + 4'd1;
+                        end
+                    end else begin
+                        tmp[7:4] = tmp[7:4] + 4'd1;
+                    end
+                end else begin
+                    tmp[3:0] = tmp[3:0] + 4'd1;
+                end
+            end
+            bcd_increment = tmp;
         end
     endfunction
 
@@ -224,14 +285,14 @@ module snake_game (
             fruit_y      <= 4'd8;
             fruit_pending <= 1'b0;
             lfsr_state   <= (acl_data[7:0] != 8'b0) ? acl_data[7:0] : 8'hA5;
-            score        <= 16'd0;
+            score        <= 16'h0000;
         end else if (button_pulse) begin
             initialise_snake();
             dir_current  <= DIR_RIGHT;
             game_over    <= 1'b0;
             fruit_pending <= 1'b1;
             lfsr_state   <= lfsr_advance((acl_data[7:0] != 8'b0) ? acl_data[7:0] : 8'h5A);
-            score        <= 16'd0;
+            score        <= 16'h0000;
         end else begin
             if (!game_over && step_tick) begin
                 if (border_collision || self_collision) begin
@@ -249,8 +310,8 @@ module snake_game (
                     if (will_grow && snake_length < MAX_SNAKE_CELLS) begin
                         snake_length <= snake_length + 1'b1;
                         fruit_pending <= 1'b1;
-                        if (score < SCORE_MAX)
-                            score <= score + 16'd1;
+                        if (score != SCORE_MAX)
+                            score <= bcd_increment(score);
                     end
 
                     dir_current <= dir_request;
@@ -267,6 +328,21 @@ module snake_game (
             end else if (!game_over && step_tick) begin
                 lfsr_state <= lfsr_advance(lfsr_state);
             end
+        end
+    end
+
+    always @(*) begin
+        tail_dir = dir_current;
+        if (snake_length >= 9'd2) begin
+            tail_idx = snake_length - 1;
+            if (snake_x[tail_idx-1] < snake_x[tail_idx])
+                tail_dir = DIR_RIGHT;
+            else if (snake_x[tail_idx-1] > snake_x[tail_idx])
+                tail_dir = DIR_LEFT;
+            else if (snake_y[tail_idx-1] < snake_y[tail_idx])
+                tail_dir = DIR_DOWN;
+            else if (snake_y[tail_idx-1] > snake_y[tail_idx])
+                tail_dir = DIR_UP;
         end
     end
 
@@ -338,17 +414,32 @@ module snake_game (
     reg snake_cell;
     reg snake_head_cell;
     reg snake_tail_cell;
+    reg body_vertical_cell;
+    reg body_horizontal_cell;
+    reg [1:0] tail_dir;
+    integer tail_idx;
     always @(*) begin
-        snake_cell      = 1'b0;
-        snake_head_cell = 1'b0;
-        snake_tail_cell = 1'b0;
+        snake_cell          = 1'b0;
+        snake_head_cell     = 1'b0;
+        snake_tail_cell     = 1'b0;
+        body_vertical_cell  = 1'b0;
+        body_horizontal_cell= 1'b0;
         if (within_grid) begin
             for (i = 0; i < MAX_SNAKE_CELLS; i = i + 1) begin
-                if (i < snake_length) begin
+                if (!snake_cell && (i < snake_length)) begin
                     if (snake_x[i][3:0] == cell_x && snake_y[i][3:0] == cell_y) begin
                         snake_cell      = 1'b1;
                         snake_head_cell = (i == 0);
                         snake_tail_cell = (i == (snake_length - 1));
+                        if (i > 0 && i < snake_length - 1) begin
+                            if (snake_x[i-1] == snake_x[i] && snake_x[i+1] == snake_x[i]) begin
+                                body_vertical_cell   = 1'b1;
+                            end else if (snake_y[i-1] == snake_y[i] && snake_y[i+1] == snake_y[i]) begin
+                                body_horizontal_cell = 1'b1;
+                            end else begin
+                                body_vertical_cell   = 1'b1;
+                            end
+                        end
                     end
                 end
             end
@@ -386,13 +477,26 @@ module snake_game (
         end
     end
 
+    wire [7:0] head_rot = rotate_coords(sprite_col, sprite_row, dir_current);
+    assign head_sx = head_rot[7:4];
+    assign head_sy = head_rot[3:0];
+
+    wire [7:0] tail_rot = rotate_coords(sprite_col, sprite_row, tail_dir);
+    assign tail_sx = tail_rot[7:4];
+    assign tail_sy = tail_rot[3:0];
+
+    wire [1:0] body_dir_render = body_horizontal_cell ? DIR_RIGHT : DIR_UP;
+    wire [7:0] body_rot = rotate_coords(sprite_col, sprite_row, body_dir_render);
+    assign body_sx = body_rot[7:4];
+    assign body_sy = body_rot[3:0];
+
     sprite_rom #(
         .SPRITE_W (SPRITE_W),
         .SPRITE_H (SPRITE_H),
         .FILENAME ("head.hex")
     ) head_sprite (
-        .sx(sprite_col),
-        .sy(sprite_row),
+        .sx(head_sx),
+        .sy(head_sy),
         .rgb(head_rgb)
     );
 
@@ -401,8 +505,8 @@ module snake_game (
         .SPRITE_H (SPRITE_H),
         .FILENAME ("body.hex")
     ) body_sprite (
-        .sx(sprite_col),
-        .sy(sprite_row),
+        .sx(body_sx),
+        .sy(body_sy),
         .rgb(body_rgb)
     );
 
@@ -411,8 +515,8 @@ module snake_game (
         .SPRITE_H (SPRITE_H),
         .FILENAME ("tail.hex")
     ) tail_sprite (
-        .sx(sprite_col),
-        .sy(sprite_row),
+        .sx(tail_sx),
+        .sy(tail_sy),
         .rgb(tail_rgb)
     );
 

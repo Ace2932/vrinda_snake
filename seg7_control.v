@@ -73,23 +73,23 @@ module seg7_control(
         end
     endfunction
 
-    // Clamp score to 4-digit range
-    wire [15:0] score_clamped = (score > 16'd9999) ? 16'd9999 : score;
-    
-    // Extract individual digits
-    wire [3:0] digit0 = score_clamped % 10;
-    wire [3:0] digit1 = (score_clamped / 10)   % 10;
-    wire [3:0] digit2 = (score_clamped / 100)  % 10;
-    wire [3:0] digit3 = (score_clamped / 1000) % 10;
+    wire [3:0] digit0 = score[3:0];
+    wire [3:0] digit1 = score[7:4];
+    wire [3:0] digit2 = score[11:8];
+    wire [3:0] digit3 = score[15:12];
+
+    wire show_digit1 = (digit1 != 4'd0) || (digit2 != 4'd0) || (digit3 != 4'd0);
+    wire show_digit2 = (digit2 != 4'd0) || (digit3 != 4'd0);
+    wire show_digit3 = (digit3 != 4'd0);
     
     // Logic for driving segments based on which anode is selected
     always @(*) begin
         dp = 1'b1; // decimal point off
         case(anode_select)
             3'b000: seg = encode_digit(digit0);
-            3'b001: seg = (score_clamped >= 16'd10)   ? encode_digit(digit1) : NULL;
-            3'b010: seg = (score_clamped >= 16'd100)  ? encode_digit(digit2) : NULL;
-            3'b011: seg = (score_clamped >= 16'd1000) ? encode_digit(digit3) : NULL;
+            3'b001: seg = show_digit1 ? encode_digit(digit1) : NULL;
+            3'b010: seg = show_digit2 ? encode_digit(digit2) : NULL;
+            3'b011: seg = show_digit3 ? encode_digit(digit3) : NULL;
             default: seg = NULL;
         endcase
     end
