@@ -48,9 +48,11 @@ module merged_top(
     );
 
     // Display accelerometer data on 7-segment display
+    wire [15:0] score;
+
     seg7_control sseg (
         .CLK100MHZ(CLK100MHZ),
-        .acl_data(acl_data),
+        .score(score),
         .seg(SEG),
         .dp(DP),
         .an(AN)
@@ -79,7 +81,8 @@ module merged_top(
         .acl_data(acl_data),
         .hCount(hCount),
         .vCount(vCount),
-        .rgb(rgb)
+        .rgb(rgb),
+        .score(score)
     );
 
     // VGA color mapping

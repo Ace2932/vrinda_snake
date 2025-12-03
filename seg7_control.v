@@ -7,45 +7,24 @@
 
 module seg7_control(
     input CLK100MHZ,
-    input [14:0] acl_data,
+    input [15:0] score,
     output reg [6:0] seg,
     output reg dp,
     output reg [7:0] an
     );
     
-    // Take sign bits out of accelerometer data
-    wire x_sign, y_sign, z_sign;
-    assign x_sign = acl_data[14];
-    assign y_sign = acl_data[9];
-    assign z_sign = acl_data[4];
-    
-    // Take 6 bits of axis data out of accelerometer data
-    wire [3:0] x_data, y_data, z_data;
-    assign x_data = acl_data[13:10];
-    assign y_data = acl_data[8:5];
-    assign z_data = acl_data[3:0];
-    
-    // Binary to BCD conversion for each axis 6-bit data
-    wire [3:0] x_10, x_1, y_10, y_1, z_10, z_1;
-    assign x_10 = x_data / 10;
-    assign x_1  = x_data % 10;
-    assign y_10 = y_data / 10;
-    assign y_1  = y_data % 10;
-    assign z_10 = z_data / 10;
-    assign z_1  = z_data % 10;
-    
     // Parameters for segment patterns
-    parameter ZERO  = 7'b000_0001;  // 0
-    parameter ONE   = 7'b100_1111;  // 1
-    parameter TWO   = 7'b001_0010;  // 2 
-    parameter THREE = 7'b000_0110;  // 3
-    parameter FOUR  = 7'b100_1100;  // 4
-    parameter FIVE  = 7'b010_0100;  // 5
-    parameter SIX   = 7'b010_0000;  // 6
-    parameter SEVEN = 7'b000_1111;  // 7
-    parameter EIGHT = 7'b000_0000;  // 8
-    parameter NINE  = 7'b000_0100;  // 9
-    parameter NULL  = 7'b111_1111;  // all OFF
+    localparam ZERO  = 7'b000_0001;  // 0
+    localparam ONE   = 7'b100_1111;  // 1
+    localparam TWO   = 7'b001_0010;  // 2 
+    localparam THREE = 7'b000_0110;  // 3
+    localparam FOUR  = 7'b100_1100;  // 4
+    localparam FIVE  = 7'b010_0100;  // 5
+    localparam SIX   = 7'b010_0000;  // 6
+    localparam SEVEN = 7'b000_1111;  // 7
+    localparam EIGHT = 7'b000_0000;  // 8
+    localparam NINE  = 7'b000_0100;  // 9
+    localparam NULL  = 7'b111_1111;  // all OFF
     
     // To select each anode in turn
     reg [2:0] anode_select = 3'b0;     // 3 bit counter for selecting each of 8 anodes
@@ -74,132 +53,46 @@ module seg7_control(
             3'b111 : an = 8'b0111_1111; 
         endcase
     end
+
+    function [6:0] encode_digit;
+        input [3:0] value;
+        begin
+            case (value)
+                4'd0: encode_digit = ZERO;
+                4'd1: encode_digit = ONE;
+                4'd2: encode_digit = TWO;
+                4'd3: encode_digit = THREE;
+                4'd4: encode_digit = FOUR;
+                4'd5: encode_digit = FIVE;
+                4'd6: encode_digit = SIX;
+                4'd7: encode_digit = SEVEN;
+                4'd8: encode_digit = EIGHT;
+                4'd9: encode_digit = NINE;
+                default: encode_digit = NULL;
+            endcase
+        end
+    endfunction
+
+    // Clamp score to 4-digit range
+    wire [15:0] score_clamped = (score > 16'd9999) ? 16'd9999 : score;
+    
+    // Extract individual digits
+    wire [3:0] digit0 = score_clamped % 10;
+    wire [3:0] digit1 = (score_clamped / 10)   % 10;
+    wire [3:0] digit2 = (score_clamped / 100)  % 10;
+    wire [3:0] digit3 = (score_clamped / 1000) % 10;
     
     // Logic for driving segments based on which anode is selected
-    always @*
+    always @(*) begin
+        dp = 1'b1; // decimal point off
         case(anode_select)
-            3'b000 : begin
-                        if(z_sign)                  // if sign is negative
-                            dp = 1'b0;              // ON
-                        else
-                            dp = 1'b1;              // OFF 
-                                
-                        case(z_1)                   // Z axis ones digit
-                            4'b0000 : seg = ZERO;
-                            4'b0001 : seg = ONE;
-                            4'b0010 : seg = TWO;
-                            4'b0011 : seg = THREE;
-                            4'b0100 : seg = FOUR;
-                            4'b0101 : seg = FIVE;
-                            4'b0110 : seg = SIX;
-                            4'b0111 : seg = SEVEN;
-                            4'b1000 : seg = EIGHT;
-                            4'b1001 : seg = NINE;
-                        endcase
-                    end
-                    
-            3'b001 : begin  
-                        dp = 1'b1;                  // OFF  
-                        
-                        case(z_10)                  // Z axis tens digit
-                            4'b0000 : seg = ZERO;
-                            4'b0001 : seg = ONE;
-                            4'b0010 : seg = TWO;
-                            4'b0011 : seg = THREE;
-                            4'b0100 : seg = FOUR;
-                            4'b0101 : seg = FIVE;
-                            4'b0110 : seg = SIX;
-                            4'b0111 : seg = SEVEN;
-                            4'b1000 : seg = EIGHT;
-                            4'b1001 : seg = NINE;
-                        endcase
-                    end
-                    
-            3'b010 : begin                          // anode not used
-                        dp = 1'b1;
-                        seg = NULL;     
-                    end
-                    
-            3'b011 : begin
-                        if(y_sign)                  // if sign is negative
-                            dp = 1'b0;              // ON
-                        else
-                            dp = 1'b1;              // OFF
-                        
-                        case(y_1)                   // Y axis ones digit
-                            4'b0000 : seg = ZERO;
-                            4'b0001 : seg = ONE;
-                            4'b0010 : seg = TWO;
-                            4'b0011 : seg = THREE;
-                            4'b0100 : seg = FOUR;
-                            4'b0101 : seg = FIVE;
-                            4'b0110 : seg = SIX;
-                            4'b0111 : seg = SEVEN;
-                            4'b1000 : seg = EIGHT;
-                            4'b1001 : seg = NINE;
-                        endcase
-                    end
-                    
-            3'b100 : begin
-                        dp = 1'b1;                  // OFF
-                         
-                        case(y_10)                  // Y axis tens digit
-                            4'b0000 : seg = ZERO;
-                            4'b0001 : seg = ONE;
-                            4'b0010 : seg = TWO;
-                            4'b0011 : seg = THREE;
-                            4'b0100 : seg = FOUR;
-                            4'b0101 : seg = FIVE;
-                            4'b0110 : seg = SIX;
-                            4'b0111 : seg = SEVEN;
-                            4'b1000 : seg = EIGHT;
-                            4'b1001 : seg = NINE;
-                        endcase
-                    end
-                    
-            3'b101 : begin                          // anode not used
-                        dp = 1'b1;
-                        seg = NULL;    
-                        
-                    end
-                    
-            3'b110 : begin 
-                        if(x_sign)                  // if sign is negative
-                            dp = 1'b0;              // ON
-                        else
-                            dp = 1'b1;              // OFF
-                        
-                        case(x_1)                   // X axis ones digit
-                            4'b0000 : seg = ZERO;
-                            4'b0001 : seg = ONE;
-                            4'b0010 : seg = TWO;
-                            4'b0011 : seg = THREE;
-                            4'b0100 : seg = FOUR;
-                            4'b0101 : seg = FIVE;
-                            4'b0110 : seg = SIX;
-                            4'b0111 : seg = SEVEN;
-                            4'b1000 : seg = EIGHT;
-                            4'b1001 : seg = NINE;
-                        endcase
-                    end
-                    
-            3'b111 : begin
-                        dp = 1'b1;                  // OFF
-                         
-                        case(x_10)                  // X axis tens digit
-                            4'b0000 : seg = ZERO;
-                            4'b0001 : seg = ONE;
-                            4'b0010 : seg = TWO;
-                            4'b0011 : seg = THREE;
-                            4'b0100 : seg = FOUR;
-                            4'b0101 : seg = FIVE;
-                            4'b0110 : seg = SIX;
-                            4'b0111 : seg = SEVEN;
-                            4'b1000 : seg = EIGHT;
-                            4'b1001 : seg = NINE;
-                        endcase
-                    end
-        endcase 
+            3'b000: seg = encode_digit(digit0);
+            3'b001: seg = (score_clamped >= 16'd10)   ? encode_digit(digit1) : NULL;
+            3'b010: seg = (score_clamped >= 16'd100)  ? encode_digit(digit2) : NULL;
+            3'b011: seg = (score_clamped >= 16'd1000) ? encode_digit(digit3) : NULL;
+            default: seg = NULL;
+        endcase
+    end
     
 endmodule
 

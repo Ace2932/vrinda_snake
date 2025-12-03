@@ -8,15 +8,17 @@ module snake_game (
     input      [14:0]  acl_data,     // accelerometer sample (X,Y,Z packed)
     input      [9:0]   hCount,       // horizontal pixel counter
     input      [9:0]   vCount,       // vertical pixel counter
-    output reg [11:0]  rgb           // 12-bit packed RGB (4:4:4)
+    output reg [11:0]  rgb,          // 12-bit packed RGB (4:4:4)
+    output reg [15:0]  score         // score for 7-seg display
 );
 
     localparam integer GRID_WIDTH        = 16;
     localparam integer GRID_HEIGHT       = 16;
     localparam integer CELL_WIDTH        = 40;
     localparam integer CELL_HEIGHT       = 30;
-    localparam integer STEP_INTERVAL     = 100_000_000; // 1 second @ 100 MHz
+    localparam integer STEP_INTERVAL     = 50_000_000; // 0.5 second @ 100 MHz
     localparam integer MAX_SNAKE_CELLS   = GRID_WIDTH * GRID_HEIGHT;
+    localparam [15:0] SCORE_MAX          = 16'd9999;
 
     localparam [11:0] COLOR_BACKGROUND   = 12'h118;
     localparam [11:0] COLOR_GRID         = 12'h333;
@@ -222,12 +224,14 @@ module snake_game (
             fruit_y      <= 4'd8;
             fruit_pending <= 1'b0;
             lfsr_state   <= (acl_data[7:0] != 8'b0) ? acl_data[7:0] : 8'hA5;
+            score        <= 16'd0;
         end else if (button_pulse) begin
             initialise_snake();
             dir_current  <= DIR_RIGHT;
             game_over    <= 1'b0;
             fruit_pending <= 1'b1;
             lfsr_state   <= lfsr_advance((acl_data[7:0] != 8'b0) ? acl_data[7:0] : 8'h5A);
+            score        <= 16'd0;
         end else begin
             if (!game_over && step_tick) begin
                 if (border_collision || self_collision) begin
@@ -245,6 +249,8 @@ module snake_game (
                     if (will_grow && snake_length < MAX_SNAKE_CELLS) begin
                         snake_length <= snake_length + 1'b1;
                         fruit_pending <= 1'b1;
+                        if (score < SCORE_MAX)
+                            score <= score + 16'd1;
                     end
 
                     dir_current <= dir_request;
